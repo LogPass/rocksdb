@@ -3620,6 +3620,97 @@ Status DBImpl::DeleteFile(std::string name) {
   return status;
 }
 
+Status DBImpl::DeleteFiles(const std::vector<std::string>& files) {
+  std::vector<uint64_t> numbers(files.size());
+  std::vector<FileType> types(files.size());
+  std::vector<WalFileType> log_types(files.size());
+  for(size_t i = 0; i < files.size(); ++i) {
+    if (!ParseFileName(files[i], &numbers[i], &types[i], &log_types[i]) ||
+        (types[i] != kTableFile && types[i] != kWalFile)) {
+      ROCKS_LOG_ERROR(immutable_db_options_.info_log, "DeleteFiles %s failed.\n",
+                      files[i].c_str());
+      return Status::InvalidArgument("Invalid file name");
+    }
+
+    if (types[i] == kWalFile) {
+      ROCKS_LOG_ERROR(immutable_db_options_.info_log,
+                      "DeleteFiles %s failed - not table files.\n",
+                      files[i].c_str());
+      return Status::NotSupported("Delete only supported for table files");
+    }
+  }
+
+  Status status;
+  int level;
+  FileMetaData* metadata;
+  ColumnFamilyData* cfd;
+  autovector<ColumnFamilyData*> cfds;
+  autovector<autovector<VersionEdit*>> edit_lists;
+  JobContext job_context(next_job_id_.fetch_add(1), true);
+  {
+    InstrumentedMutexLock l(&mutex_);
+    for(size_t i = 0; i < files.size(); ++i) {
+      status = versions_->GetMetadataForFile(numbers[i], &level, &metadata, &cfd);
+      if (!status.ok()) {
+        ROCKS_LOG_WARN(immutable_db_options_.info_log,
+                      "DeleteFile %s failed. File not found\n", files[i].c_str());
+        job_context.Clean();
+        return Status::InvalidArgument("File not found");
+      }
+      assert(level < cfd->NumberLevels());
+
+      if (metadata->being_compacted) {
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                      "DeleteFile %s Skipped. File about to be compacted\n",
+                      files[i].c_str());
+        job_context.Clean();
+        return Status::OK();
+      }
+
+      auto it = std::find(cfds.begin(), cfds.end(), cfd);
+      if(it == cfds.end()) {
+        cfds.push_back(cfd);
+        it = --(cfds.end());
+        edit_lists.push_back({new VersionEdit()});
+        edit_lists.back()[0]->SetColumnFamily(cfd->GetID());
+      }
+      size_t index = std::distance(cfds.begin(), it);
+      edit_lists[index][0]->DeleteFile(level, numbers[i]);
+    }
+
+    autovector<const MutableCFOptions*> cfd_options;
+    for (size_t i = 0; i < cfds.size(); ++i) {
+      cfd_options.push_back(cfds[i]->GetLatestMutableCFOptions());
+    }
+
+    // edit_lists is deleted by LogAndApply
+    status = versions_->LogAndApply(cfds, cfd_options, edit_lists, &mutex_,
+                                    directories_.GetDbDir());
+
+    for (size_t i = 1; i < cfds.size(); ++i) {
+      job_context.superversion_contexts.emplace_back(true);
+    }
+
+    if (status.ok()) {
+      for (size_t i = 0; i < cfds.size(); ++i) {
+        InstallSuperVersionAndScheduleWork(
+            cfds[i], &job_context.superversion_contexts[i],
+            *(cfds[i]->GetLatestMutableCFOptions()));
+      }
+    }
+    FindObsoleteFiles(&job_context, false);
+  }  // lock released here
+
+  LogFlush(immutable_db_options_.info_log);
+  // remove files outside the db-lock
+  if (job_context.HaveSomethingToDelete()) {
+    // Call PurgeObsoleteFiles() without holding mutex.
+    PurgeObsoleteFiles(job_context);
+  }
+  job_context.Clean();
+  return status;
+}
+
 Status DBImpl::DeleteFilesInRanges(ColumnFamilyHandle* column_family,
                                    const RangePtr* ranges, size_t n,
                                    bool include_end) {
