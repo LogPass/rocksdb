@@ -3039,6 +3039,8 @@ class ModelDB : public DB {
 
   Status DeleteFile(std::string /*name*/) override { return Status::OK(); }
 
+  Status DeleteFiles(const std::vector<std::string>& /*files*/) override { return Status::OK(); }
+
   Status GetUpdatesSince(
       ROCKSDB_NAMESPACE::SequenceNumber,
       std::unique_ptr<ROCKSDB_NAMESPACE::TransactionLogIterator>*,
