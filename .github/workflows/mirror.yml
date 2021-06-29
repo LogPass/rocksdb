@@ -1,0 +1,26 @@
+---
+name: mirror repository
+'on':
+  push:
+    branches:
+      - master
+    tags:
+      - '**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: mirror to bitbucket
+        uses: spyoungtech/mirror-action@v0.4.3
+        with:
+          REMOTE: git@bitbucket.org:dealdone/rocksdb.git
+          GIT_SSH_PRIVATE_KEY: >-
+            ${{ secrets.DEALDONE__BITBUCKET__SSH_PRIVATE_KEY }}
+          GIT_SSH_NO_VERIFY_HOST: true
+          PUSH_ALL_REFS: false
