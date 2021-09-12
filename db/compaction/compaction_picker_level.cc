@@ -256,6 +256,18 @@ void LevelCompactionBuilder::SetupInitialFiles() {
 
 bool LevelCompactionBuilder::SetupOtherL0FilesIfNeeded() {
   if (start_level_ == 0 && output_level_ != 0) {
+    if (compaction_reason_ == CompactionReason::kFilesMarkedForCompaction) {
+      // add every marked file from L0
+      auto l0_files = vstorage_->LevelFiles(0);
+      start_level_inputs_->files.clear();
+      for(auto& file : l0_files) {
+        if(file->marked_for_compaction) {
+          start_level_inputs_->files.emplace_back(file);
+        }
+      }
+    }
+    if(isSuggestedPartialL0Compaction())
+      return true;
     return compaction_picker_->GetOverlappingL0Files(
         vstorage_, &start_level_inputs_, output_level_, &parent_index_);
   }
@@ -308,12 +320,10 @@ Compaction* LevelCompactionBuilder::PickCompaction() {
   }
   assert(start_level_ >= 0 && output_level_ >= 0);
 
-  if(!isSuggestedPartialL0Compaction()) { 
-    // If it is a L0 -> base level compaction, we need to set up other L0
-    // files if needed.
-    if (!SetupOtherL0FilesIfNeeded()) {
-      return nullptr;
-    }
+  // If it is a L0 -> base level compaction, we need to set up other L0
+  // files if needed.
+  if (!SetupOtherL0FilesIfNeeded()) {
+    return nullptr;
   }
 
   // Pick files in the output level and expand more files in the start level
