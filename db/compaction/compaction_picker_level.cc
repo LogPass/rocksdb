@@ -259,10 +259,10 @@ bool LevelCompactionBuilder::SetupOtherL0FilesIfNeeded() {
     if (compaction_reason_ == CompactionReason::kFilesMarkedForCompaction) {
       // add every marked file from L0
       auto l0_files = vstorage_->LevelFiles(0);
-      start_level_inputs_->files.clear();
+      start_level_inputs_.files.clear();
       for(auto& file : l0_files) {
         if(file->marked_for_compaction) {
-          start_level_inputs_->files.emplace_back(file);
+          start_level_inputs_.files.emplace_back(file);
         }
       }
     }
