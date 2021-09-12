@@ -475,12 +475,35 @@ bool CompactionPicker::SetupOtherInputs(
     }
   }
 
+  // if inputs are oldest files from L0, don't expand input
+  bool try_to_expand_inputs = true;
+  if(input_level == 0 && output_level > 0) {
+    auto l0_files = vstorage->LevelFiles(0);
+    if(l0_files.size() >= start_level_inputs_.size() && l0_files.empty()) {
+      std::set<uint64_t> inputs_numbers;
+      for(auto& file : inputs->files) {
+        inputs_numbers.insert(file->fd.GetNumber());
+      }
+
+      int correct_files = 0;
+      for(auto rit = l0_files.rbegin(); rit != l0_files.rend(); ++rit) {
+        if(inputs_numbers.count((*rit)->fd.GetNumber()) == 0) {
+          break;
+        }
+        correct_files += 1;
+      }
+
+      if(correct_files == inputs_numbers.size())
+        try_to_expand_inputs = false;
+    }
+  }
+
   // See if we can further grow the number of inputs in "level" without
   // changing the number of "level+1" files we pick up. We also choose NOT
   // to expand if this would cause "level" to include some entries for some
   // user key, while excluding other entries for the same user key. This
   // can happen when one user key spans multiple files.
-  if (!output_level_inputs->empty()) {
+  if (!output_level_inputs->empty() && try_to_expand_inputs) {
     const uint64_t limit = mutable_cf_options.max_compaction_bytes;
     const uint64_t output_level_inputs_size =
         TotalCompensatedFileSize(output_level_inputs->files);

@@ -314,12 +314,12 @@ Compaction* LevelCompactionBuilder::PickCompaction() {
     if (!SetupOtherL0FilesIfNeeded()) {
       return nullptr;
     }
+  }
 
-    // Pick files in the output level and expand more files in the start level
-    // if needed.
-    if (!SetupOtherInputsIfNeeded()) {
-      return nullptr;
-    }
+  // Pick files in the output level and expand more files in the start level
+  // if needed.
+  if (!SetupOtherInputsIfNeeded()) {
+    return nullptr;
   }
 
   // Form a compaction object containing the files we picked.
