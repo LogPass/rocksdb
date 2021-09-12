@@ -103,6 +103,10 @@ class LevelCompactionBuilder {
       const autovector<std::pair<int, FileMetaData*>>& level_files,
       bool compact_to_next_level);
 
+  // Returns true if it's suggested partial compaction and all files are latest  
+  // files from L0
+  bool isSuggestedPartialL0Compaction();
+
   const std::string& cf_name_;
   VersionStorageInfo* vstorage_;
   SequenceNumber earliest_mem_seqno_;
@@ -252,26 +256,6 @@ void LevelCompactionBuilder::SetupInitialFiles() {
 
 bool LevelCompactionBuilder::SetupOtherL0FilesIfNeeded() {
   if (start_level_ == 0 && output_level_ != 0) {
-    auto l0_files = vstorage_->LevelFiles(0);
-    if(l0_files.size() >= start_level_inputs_.size() && !l0_files.empty()) {
-      // if inputs are last files in l0, there's no overlapping
-      std::set<uint64_t> start_level_inputs_numbers;
-      for(auto& file : start_level_inputs_.files) {
-        start_level_inputs_numbers.insert(file->fd.GetNumber());
-      }
-
-      int correct_files = 0;
-      for(auto rit = l0_files.rbegin(); rit != l0_files.rend(); ++rit) {
-        if(start_level_inputs_numbers.count((*rit)->fd.GetNumber()) == 0) {
-          break;
-        }
-        correct_files += 1;
-      }
-
-      if(start_level_inputs_.size() == correct_files)
-        return true;
-    }
-
     return compaction_picker_->GetOverlappingL0Files(
         vstorage_, &start_level_inputs_, output_level_, &parent_index_);
   }
@@ -324,16 +308,18 @@ Compaction* LevelCompactionBuilder::PickCompaction() {
   }
   assert(start_level_ >= 0 && output_level_ >= 0);
 
-  // If it is a L0 -> base level compaction, we need to set up other L0
-  // files if needed.
-  if (!SetupOtherL0FilesIfNeeded()) {
-    return nullptr;
-  }
+  if(!isSuggestedPartialL0Compaction()) { 
+    // If it is a L0 -> base level compaction, we need to set up other L0
+    // files if needed.
+    if (!SetupOtherL0FilesIfNeeded()) {
+      return nullptr;
+    }
 
-  // Pick files in the output level and expand more files in the start level
-  // if needed.
-  if (!SetupOtherInputsIfNeeded()) {
-    return nullptr;
+    // Pick files in the output level and expand more files in the start level
+    // if needed.
+    if (!SetupOtherInputsIfNeeded()) {
+      return nullptr;
+    }
   }
 
   // Form a compaction object containing the files we picked.
@@ -515,6 +501,35 @@ bool LevelCompactionBuilder::PickIntraL0Compaction() {
                                port::kMaxUint64,
                                mutable_cf_options_.max_compaction_bytes,
                                &start_level_inputs_, earliest_mem_seqno_);
+}
+
+bool LevelCompactionBuilder::isSuggestedPartialL0Compaction()
+{
+  if (compaction_reason_ != CompactionReason::kFilesMarkedForCompaction) {
+    return false;
+  }
+  if (start_level_ != 0 || output_level_ == 0) {
+    return false;
+  }
+  auto l0_files = vstorage_->LevelFiles(0);
+  if(l0_files.size() < start_level_inputs_.size() || l0_files.empty()) {
+    return false;
+  }
+
+  std::set<uint64_t> start_level_inputs_numbers;
+  for(auto& file : start_level_inputs_.files) {
+    start_level_inputs_numbers.insert(file->fd.GetNumber());
+  }
+
+  int correct_files = 0;
+  for(auto rit = l0_files.rbegin(); rit != l0_files.rend(); ++rit) {
+    if(start_level_inputs_numbers.count((*rit)->fd.GetNumber()) == 0) {
+      break;
+    }
+    correct_files += 1;
+  }
+
+  return correct_files == start_level_inputs_numbers.size();
 }
 }  // namespace
 
