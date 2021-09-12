@@ -146,6 +146,34 @@ Status DBImpl::PromoteL0(ColumnFamilyHandle* column_family, int target_level) {
 
   return status;
 }
+
+Status DBImpl::SuggestPartialL0Compaction(ColumnFamilyHandle* column_family,
+                                          int files_to_keep) {
+  auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
+  auto cfd = cfh->cfd();
+  {
+    InstrumentedMutexLock l(&mutex_);
+    auto vstorage = cfd->current()->storage_info();
+    auto l0_files = vstorage->LevelFiles(0);
+
+    for (size_t i = files_to_keep; i < l0_files.size(); ++i) {
+      auto& f = l0_files[i];
+      if (f->being_compacted) {
+        continue;
+      }
+      f->marked_for_compaction = true;
+    }
+
+    // Since we have some more files to compact, we should also recompute
+    // compaction score
+    vstorage->ComputeCompactionScore(*cfd->ioptions(),
+                                     *cfd->GetLatestMutableCFOptions());
+    SchedulePendingCompaction(cfd);
+    MaybeScheduleFlushOrCompaction();
+  }
+  return Status::OK();
+}
+
 #endif  // ROCKSDB_LITE
 
 }  // namespace ROCKSDB_NAMESPACE

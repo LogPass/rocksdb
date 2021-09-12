@@ -1622,6 +1622,12 @@ class DB {
     return Status::NotSupported("PromoteL0() is not implemented.");
   }
 
+  // Suggestion compaction of L0, keeping files_to_keep recent files in L0 
+  virtual Status SuggestPartialL0Compaction(ColumnFamilyHandle* /*column_family*/,
+                                            int /*files_to_keep*/) {
+    return Status::NotSupported("SuggestPartialL0Compaction() is not implemented.");
+  }
+
   // Trace DB operations. Use EndTrace() to stop tracing.
   virtual Status StartTrace(const TraceOptions& /*options*/,
                             std::unique_ptr<TraceWriter>&& /*trace_writer*/) {
