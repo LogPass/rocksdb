@@ -479,7 +479,7 @@ bool CompactionPicker::SetupOtherInputs(
   bool try_to_expand_inputs = true;
   if(input_level == 0 && output_level > 0) {
     auto l0_files = vstorage->LevelFiles(0);
-    if(l0_files.size() >= start_level_inputs_.size() && l0_files.empty()) {
+    if(l0_files.size() >= inputs->size() && l0_files.empty()) {
       std::set<uint64_t> inputs_numbers;
       for(auto& file : inputs->files) {
         inputs_numbers.insert(file->fd.GetNumber());
