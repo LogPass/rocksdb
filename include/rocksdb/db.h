@@ -1622,7 +1622,11 @@ class DB {
     return Status::NotSupported("PromoteL0() is not implemented.");
   }
 
-  // Suggestion compaction of L0, keeping files_to_keep recent files in L0 
+  virtual Status PromoteLastL0File(ColumnFamilyHandle* /*column_family*/,
+                                   int /*target_level*/) {
+    return Status::NotSupported("PromoteLastL0File() is not implemented.");
+  }
+
   virtual Status SuggestPartialL0Compaction(ColumnFamilyHandle* /*column_family*/,
                                             int /*files_to_keep*/) {
     return Status::NotSupported("SuggestPartialL0Compaction() is not implemented.");

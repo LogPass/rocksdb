@@ -413,7 +413,9 @@ class DBImpl : public DB {
   Status PromoteL0(ColumnFamilyHandle* column_family,
                    int target_level) override;
 
-  // Suggestion compaction of L0, keeping files_to_keep recent files in L0 
+  Status PromoteLastL0File(ColumnFamilyHandle* column_family,
+                           int target_level) override;
+
   Status SuggestPartialL0Compaction(ColumnFamilyHandle* column_family,
                                     int files_to_keep) override;
 

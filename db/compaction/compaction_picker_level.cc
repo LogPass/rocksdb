@@ -252,6 +252,26 @@ void LevelCompactionBuilder::SetupInitialFiles() {
 
 bool LevelCompactionBuilder::SetupOtherL0FilesIfNeeded() {
   if (start_level_ == 0 && output_level_ != 0) {
+    auto l0_files = vstorage_->LevelFiles(0);
+    if(l0_files.size() >= start_level_inputs_.size() && !l0_files.empty()) {
+      // if inputs are last files in l0, there's no overlapping
+      std::set<uint64_t> start_level_inputs_numbers;
+      for(auto& file : start_level_inputs_.files) {
+        start_level_inputs_numbers.insert(file->fd.GetNumber());
+      }
+
+      int correct_files = 0;
+      for(auto rit = l0_files.rbegin(); rit != l0_files.rend(); ++rit) {
+        if(start_level_inputs_numbers.count((*rit)->fd.GetNumber()) == 0) {
+          break;
+        }
+        correct_files += 1;
+      }
+
+      if(start_level_inputs_.size() == correct_files)
+        return true;
+    }
+
     return compaction_picker_->GetOverlappingL0Files(
         vstorage_, &start_level_inputs_, output_level_, &parent_index_);
   }

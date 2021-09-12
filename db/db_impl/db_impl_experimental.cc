@@ -147,6 +147,89 @@ Status DBImpl::PromoteL0(ColumnFamilyHandle* column_family, int target_level) {
   return status;
 }
 
+Status DBImpl::PromoteLastL0File(ColumnFamilyHandle* column_family, int target_level) {
+  assert(column_family);
+
+  if (target_level < 1) {
+    ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "PromoteLastL0File FAILED. Invalid target level %d\n", target_level);
+    return Status::InvalidArgument("Invalid target level");
+  }
+
+  Status status;
+  VersionEdit edit;
+  JobContext job_context(next_job_id_.fetch_add(1), true);
+  {
+    InstrumentedMutexLock l(&mutex_);
+    auto* cfd = static_cast<ColumnFamilyHandleImpl*>(column_family)->cfd();
+    const auto* vstorage = cfd->current()->storage_info();
+
+    if (target_level >= vstorage->num_levels()) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "PromoteLastL0File FAILED. Target level %d does not exist\n",
+                     target_level);
+      job_context.Clean();
+      return Status::InvalidArgument("Target level does not exist");
+    }
+
+    // Sort L0 files by range.
+    const InternalKeyComparator* icmp = &cfd->internal_comparator();
+    auto l0_files = vstorage->LevelFiles(0);
+
+    if(l0_files.empty()) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "PromoteLastL0File FAILED. Level 0 is empty");
+      job_context.Clean();
+      return Status::InvalidArgument("Level 0 is empty");
+    }
+
+    auto f = l0_files.back();
+
+    // Check that no L0 file is being compacted and that they have
+    // non-overlapping ranges.
+    if (f->being_compacted) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                      "PromoteLastL0File FAILED. File %" PRIu64 " being compacted\n",
+                      f->fd.GetNumber());
+      job_context.Clean();
+      return Status::InvalidArgument("PromoteLastL0File called during L0 compaction");
+    }
+
+    // Check that all levels up to target_level are empty.
+    for (int level = 1; level <= target_level; ++level) {
+      if (vstorage->NumLevelFiles(level) > 0) {
+        ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                       "PromoteLastL0File FAILED. Level %d not empty\n", level);
+        job_context.Clean();
+        return Status::InvalidArgument(
+            "All levels up to target_level "
+            "must be empty");
+      }
+    }
+
+    edit.SetColumnFamily(cfd->GetID());
+    edit.DeleteFile(0, f->fd.GetNumber());
+    edit.AddFile(target_level, f->fd.GetNumber(), f->fd.GetPathId(),
+                  f->fd.GetFileSize(), f->smallest, f->largest,
+                  f->fd.smallest_seqno, f->fd.largest_seqno,
+                  f->marked_for_compaction, f->oldest_blob_file_number,
+                  f->oldest_ancester_time, f->file_creation_time,
+                  f->file_checksum, f->file_checksum_func_name);
+
+    status = versions_->LogAndApply(cfd, *cfd->GetLatestMutableCFOptions(),
+                                    &edit, &mutex_, directories_.GetDbDir());
+    if (status.ok()) {
+      InstallSuperVersionAndScheduleWork(cfd,
+                                         &job_context.superversion_contexts[0],
+                                         *cfd->GetLatestMutableCFOptions());
+    }
+  }  // lock released here
+  LogFlush(immutable_db_options_.info_log);
+  job_context.Clean();
+
+  return status;
+}
+
 Status DBImpl::SuggestPartialL0Compaction(ColumnFamilyHandle* column_family,
                                           int files_to_keep) {
   auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);

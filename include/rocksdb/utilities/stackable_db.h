@@ -490,6 +490,11 @@ class StackableDB : public DB {
     return db_->PromoteL0(column_family, target_level);
   }
 
+  virtual Status PromoteLastL0File(ColumnFamilyHandle* column_family,
+                           int target_level) override {
+    return db_->PromoteLastL0File(column_family, target_level);
+  }
+
   virtual Status SuggestPartialL0Compaction(ColumnFamilyHandle* column_family,
                                             int files_to_keep) override {
     return db_->SuggestPartialL0Compaction(column_family, files_to_keep);
