@@ -1125,16 +1125,16 @@ void CompactionPicker::PickFilesMarkedForCompaction(
     if (i == 0 && !level0_compactions_in_progress()->empty()) {
       continue;
     }
-    assert(start_level_inputs.files.empty());
+    assert(start_level_inputs->files.empty());
     for (auto& level_file : vstorage->FilesMarkedForCompaction()) {
       if(level_file.first != i)
         continue;
       if(level_file.second->being_compacted)
         continue;
-      start_level_inputs.files.emplace_back(level_file.second);
+      start_level_inputs->files.emplace_back(level_file.second);
     }
 
-    if(start_level_inputs.files.empty())
+    if(start_level_inputs->files.empty())
       continue;
 
     start_level_inputs->level = i;
