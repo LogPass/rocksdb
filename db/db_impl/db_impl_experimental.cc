@@ -175,7 +175,6 @@ Status DBImpl::PromoteLastL0File(ColumnFamilyHandle* column_family, int target_l
     }
 
     // Sort L0 files by range.
-    const InternalKeyComparator* icmp = &cfd->internal_comparator();
     auto l0_files = vstorage->LevelFiles(0);
 
     if(l0_files.empty()) {
@@ -281,7 +280,6 @@ Status DBImpl::SuggestLevelCompaction(ColumnFamilyHandle* column_family,
                      "SuggestLevelCompaction FAILED. Level %d does"
                      " not exist\n",
                      level);
-      job_context.Clean();
       return Status::InvalidArgument("Level does not exist");
     }
 
