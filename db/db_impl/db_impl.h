@@ -419,6 +419,9 @@ class DBImpl : public DB {
   Status SuggestPartialL0Compaction(ColumnFamilyHandle* column_family,
                                     int files_to_keep) override;
 
+  Status SuggestLevelCompaction(ColumnFamilyHandle* column_family,
+                                int level) override;
+
   using DB::IngestExternalFile;
   virtual Status IngestExternalFile(
       ColumnFamilyHandle* column_family,

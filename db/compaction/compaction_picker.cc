@@ -1121,43 +1121,33 @@ void CompactionPicker::PickFilesMarkedForCompaction(
     return;
   }
 
-  auto continuation = [&, cf_name](std::pair<int, FileMetaData*> level_file) {
-    // If it's being compacted it has nothing to do here.
-    // If this assert() fails that means that some function marked some
-    // files as being_compacted, but didn't call ComputeCompactionScore()
-    assert(!level_file.second->being_compacted);
-    *start_level = level_file.first;
+  for (int i = 0; i < NumberLevels() - 1; i++) {
+    if (i == 0 && !level0_compactions_in_progress()->empty()) {
+      continue;
+    }
+    assert(start_level_inputs.files.empty());
+    for (auto& level_file : vstorage->FilesMarkedForCompaction()) {
+      if(level_file.first != i)
+        continue;
+      if(level_file.second->being_compacted)
+        continue;
+      start_level_inputs.files.emplace_back(level_file.second);
+    }
+
+    if(start_level_inputs.files.empty())
+      continue;
+
+    start_level_inputs->level = i;
+    *start_level = start_level_inputs->level;
     *output_level =
         (*start_level == 0) ? vstorage->base_level() : *start_level + 1;
 
-    if (*start_level == 0 && !level0_compactions_in_progress()->empty()) {
-      return false;
+    if(!ExpandInputsToCleanCut(cf_name, vstorage, start_level_inputs)) {
+      start_level_inputs->files.clear();
+      continue;
     }
-
-    start_level_inputs->files = {level_file.second};
-    start_level_inputs->level = *start_level;
-    return ExpandInputsToCleanCut(cf_name, vstorage, start_level_inputs);
-  };
-
-  // take a chance on a random file first
-  Random64 rnd(/* seed */ reinterpret_cast<uint64_t>(vstorage));
-  size_t random_file_index = static_cast<size_t>(rnd.Uniform(
-      static_cast<uint64_t>(vstorage->FilesMarkedForCompaction().size())));
-  TEST_SYNC_POINT_CALLBACK("CompactionPicker::PickFilesMarkedForCompaction",
-                           &random_file_index);
-
-  if (continuation(vstorage->FilesMarkedForCompaction()[random_file_index])) {
-    // found the compaction!
     return;
   }
-
-  for (auto& level_file : vstorage->FilesMarkedForCompaction()) {
-    if (continuation(level_file)) {
-      // found the compaction!
-      return;
-    }
-  }
-  start_level_inputs->files.clear();
 }
 
 bool CompactionPicker::GetOverlappingL0Files(

@@ -152,7 +152,8 @@ Status DBImpl::PromoteLastL0File(ColumnFamilyHandle* column_family, int target_l
 
   if (target_level < 1) {
     ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                   "PromoteLastL0File FAILED. Invalid target level %d\n", target_level);
+                   "PromoteLastL0File FAILED. Invalid target level %d\n",
+                   target_level);
     return Status::InvalidArgument("Invalid target level");
   }
 
@@ -166,7 +167,8 @@ Status DBImpl::PromoteLastL0File(ColumnFamilyHandle* column_family, int target_l
 
     if (target_level >= vstorage->num_levels()) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                     "PromoteLastL0File FAILED. Target level %d does not exist\n",
+                     "PromoteLastL0File FAILED. Target level %d does"
+                     " not exist\n",
                      target_level);
       job_context.Clean();
       return Status::InvalidArgument("Target level does not exist");
@@ -189,10 +191,12 @@ Status DBImpl::PromoteLastL0File(ColumnFamilyHandle* column_family, int target_l
     // non-overlapping ranges.
     if (f->being_compacted) {
       ROCKS_LOG_INFO(immutable_db_options_.info_log,
-                      "PromoteLastL0File FAILED. File %" PRIu64 " being compacted\n",
+                      "PromoteLastL0File FAILED. File %" PRIu64 
+                      " being compacted\n",
                       f->fd.GetNumber());
       job_context.Clean();
-      return Status::InvalidArgument("PromoteLastL0File called during L0 compaction");
+      return Status::InvalidArgument("PromoteLastL0File called during"
+                                     " L0 compaction");
     }
 
     // Check that all levels up to target_level are empty.
@@ -241,6 +245,47 @@ Status DBImpl::SuggestPartialL0Compaction(ColumnFamilyHandle* column_family,
 
     for (size_t i = files_to_keep; i < l0_files.size(); ++i) {
       auto& f = l0_files[i];
+      if (f->being_compacted) {
+        continue;
+      }
+      f->marked_for_compaction = true;
+    }
+
+    // Since we have some more files to compact, we should also recompute
+    // compaction score
+    vstorage->ComputeCompactionScore(*cfd->ioptions(),
+                                     *cfd->GetLatestMutableCFOptions());
+    SchedulePendingCompaction(cfd);
+    MaybeScheduleFlushOrCompaction();
+  }
+  return Status::OK();
+}
+
+Status DBImpl::SuggestLevelCompaction(ColumnFamilyHandle* column_family,
+                                      int level) {
+  if (level < 1) {
+    ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                   "SuggestLevelCompaction FAILED. Invalid level %d\n",
+                   level);
+    return Status::InvalidArgument("Invalid level");
+  }
+
+  auto cfh = static_cast_with_check<ColumnFamilyHandleImpl>(column_family);
+  auto cfd = cfh->cfd();
+  {
+    InstrumentedMutexLock l(&mutex_);
+    auto vstorage = cfd->current()->storage_info();
+
+    if (level >= vstorage->num_levels()) {
+      ROCKS_LOG_INFO(immutable_db_options_.info_log,
+                     "SuggestLevelCompaction FAILED. Level %d does"
+                     " not exist\n",
+                     level);
+      job_context.Clean();
+      return Status::InvalidArgument("Level does not exist");
+    }
+
+    for (auto& f : vstorage->LevelFiles(level)) {
       if (f->being_compacted) {
         continue;
       }

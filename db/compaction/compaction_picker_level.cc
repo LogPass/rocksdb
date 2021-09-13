@@ -167,7 +167,17 @@ void LevelCompactionBuilder::PickFileToCompact(
 }
 
 void LevelCompactionBuilder::SetupInitialFiles() {
+  // check if there are any files marked for compaction
+  compaction_picker_->PickFilesMarkedForCompaction(
+      cf_name_, vstorage_, &start_level_, &output_level_, &start_level_inputs_);
+  if (!start_level_inputs_.empty()) {
+    compaction_reason_ = CompactionReason::kFilesMarkedForCompaction;
+    return;
+  }
+
+
   // Find the compactions by size on all levels.
+  parent_index_ = base_index_ = -1;
   bool skipped_l0_to_base = false;
   for (int i = 0; i < compaction_picker_->NumberLevels() - 1; i++) {
     start_level_score_ = vstorage_->CompactionScore(i);
@@ -221,16 +231,7 @@ void LevelCompactionBuilder::SetupInitialFiles() {
     return;
   }
 
-  // if we didn't find a compaction, check if there are any files marked for
-  // compaction
   parent_index_ = base_index_ = -1;
-
-  compaction_picker_->PickFilesMarkedForCompaction(
-      cf_name_, vstorage_, &start_level_, &output_level_, &start_level_inputs_);
-  if (!start_level_inputs_.empty()) {
-    compaction_reason_ = CompactionReason::kFilesMarkedForCompaction;
-    return;
-  }
 
   // Bottommost Files Compaction on deleting tombstones
   PickFileToCompact(vstorage_->BottommostFilesMarkedForCompaction(), false);
@@ -256,16 +257,6 @@ void LevelCompactionBuilder::SetupInitialFiles() {
 
 bool LevelCompactionBuilder::SetupOtherL0FilesIfNeeded() {
   if (start_level_ == 0 && output_level_ != 0) {
-    if (compaction_reason_ == CompactionReason::kFilesMarkedForCompaction) {
-      // add every marked file from L0
-      auto l0_files = vstorage_->LevelFiles(0);
-      start_level_inputs_.files.clear();
-      for(auto& file : l0_files) {
-        if(file->marked_for_compaction) {
-          start_level_inputs_.files.emplace_back(file);
-        }
-      }
-    }
     if(isSuggestedPartialL0Compaction())
       return true;
     return compaction_picker_->GetOverlappingL0Files(

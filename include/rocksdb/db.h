@@ -1632,6 +1632,11 @@ class DB {
     return Status::NotSupported("SuggestPartialL0Compaction() is not implemented.");
   }
 
+  virtual Status SuggestLevelCompaction(ColumnFamilyHandle* /*column_family*/,
+                                        int /*level*/) {
+    return Status::NotSupported("SuggestLevelCompaction() is not implemented.");
+  }
+
   // Trace DB operations. Use EndTrace() to stop tracing.
   virtual Status StartTrace(const TraceOptions& /*options*/,
                             std::unique_ptr<TraceWriter>&& /*trace_writer*/) {

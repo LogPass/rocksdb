@@ -500,6 +500,11 @@ class StackableDB : public DB {
     return db_->SuggestPartialL0Compaction(column_family, files_to_keep);
   }
 
+  virtual Status SuggestLevelCompaction(ColumnFamilyHandle* column_family,
+                                        int level) override {
+    return db_->SuggestLevelCompaction(column_family, level);
+  }
+
   virtual ColumnFamilyHandle* DefaultColumnFamily() const override {
     return db_->DefaultColumnFamily();
   }
